@@ -1,4 +1,3 @@
-import type { CreateLeadRequest } from "./types";
 import type {
   CreateLeadInput,
   Extraction,
@@ -59,4 +58,4 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status: "CONTACTED" }),
     }),
-  }
+};

@@ -126,19 +126,69 @@ describe("InboxIQ API", () => {
     expect(empty.body).toEqual({});
   });
   it("creates a new lead with backend-owned NEW status", async () => {
-  const response = await request(app)
-    .post("/api/leads")
-    .send({
-      sourceMessageId: "message-perfect",
-      product: "Desk",
-      quantity: 4,
-      material: "Oak",
-      budget: 1000,
-      status: "CONTACTED",
+    const response = await request(app)
+      .post("/api/leads")
+      .send({
+        sourceMessageId: "message-perfect",
+        product: "Desk",
+        quantity: 4,
+        material: "Oak",
+        budget: 1000,
+        status: "CONTACTED",
+      });
+    it("creates a lead without accepting a client status", async () => {
+      const response = await request(app)
+        .post("/api/leads")
+        .send({
+          sourceMessageId: "message-perfect",
+          product: "Desk",
+          quantity: 4,
+          material: "",
+          budget: 1000,
+        });
+      it("rejects invalid lead payloads", async () => {
+        const response = await request(app)
+          .post("/api/leads")
+          .send({
+            sourceMessageId: "message-perfect",
+            product: " ",
+            quantity: 0,
+            budget: -10,
+          });
+
+        expect(response.status).toBe(400);
+        expect(await prisma.lead.count()).toBe(0);
+      });
+      it("changes a lead from NEW to CONTACTED", async () => {
+        const created = await request(app)
+          .post("/api/leads")
+          .send({
+            sourceMessageId: "message-perfect",
+            product: "Desk",
+            quantity: 2,
+          });
+
+        const response = await request(app)
+          .patch(`/api/leads/${created.body.id}/status`)
+          .send({ status: "CONTACTED" });
+
+        expect(response.status).toBe(200);
+        expect(response.body.status).toBe("CONTACTED");
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual(expect.objectContaining({
+        sourceMessageId: "message-perfect",
+        product: "Desk",
+        quantity: 4,
+        material: "",
+        budget: 1000,
+        status: "NEW",
+      }));
     });
 
-  expect(response.status).toBe(400);
-});
+    expect(response.status).toBe(400);
+  });
 });
 
 afterAll(async () => {

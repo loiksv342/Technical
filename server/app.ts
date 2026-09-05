@@ -171,5 +171,44 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
   console.error(error);
   response.status(500).json({ error: "internal_server_error" });
 });
+app.patch("/api/leads/:leadId/status", async (request, response, next) => {
+  try {
+    const parsed = contactLeadSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      response.status(400).json({
+        error: "invalid_status",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const lead = await prisma.lead.findUnique({
+      where: { id: request.params.leadId },
+    });
+
+    if (!lead) {
+      response.status(404).json({ error: "lead_not_found" });
+      return;
+    }
+
+    if (lead.status !== "NEW") {
+      response.status(409).json({ error: "lead_already_contacted" });
+      return;
+    }
+
+    const updatedLead = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { status: "CONTACTED" },
+    });
+
+    response.json({
+      ...updatedLead,
+      createdAt: updatedLead.createdAt.toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export { app };

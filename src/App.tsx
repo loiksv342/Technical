@@ -1,7 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import type { Lead, Message } from "./types";
-
+import type {
+  Extraction,
+  Lead,
+  Message,
+} from "./types";
 const path = window.location.pathname.replace(/\/+$/, "") || "/inbox";
 
 function formatDate(value: string) {
@@ -70,7 +73,7 @@ function MessageRow({ message }: { message: Message }) {
   );
 }
 
-function DetailPage({ messageId }: { messageId: string }) {
+
   const [message, setMessage] = useState<Message | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
@@ -101,6 +104,240 @@ function DetailPage({ messageId }: { messageId: string }) {
         <aside className="panel placeholder-panel" aria-label="Lead extraction status">
           <p className="eyebrow">Next step</p>
           <p className="placeholder" role="status">Lead extraction not implemented yet.</p>
+        </aside>
+      </section>
+    </main>
+  );
+function DetailPage({ messageId }: { messageId: string }) {
+  const [message, setMessage] = useState<Message | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [form, setForm] = useState<LeadForm>(emptyLeadForm);
+  const [extracting, setExtracting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    api.getMessage(messageId)
+      .then((result) => {
+        if (active) {
+          setMessage(result);
+          setState("ready");
+        }
+      })
+      .catch(() => {
+        if (active) setState("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [messageId]);
+
+  function updateField(field: keyof LeadForm, value: string) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  async function handleExtract() {
+    setExtracting(true);
+    setError("");
+
+    try {
+      const extraction: Extraction = await api.extract(messageId);
+
+      setForm((current) => ({
+        product: current.product.trim()
+          ? current.product
+          : extraction.product ?? current.product,
+
+        quantity: current.quantity.trim()
+          ? current.quantity
+          : extraction.quantity == null
+            ? current.quantity
+            : String(extraction.quantity),
+
+        material: current.material.trim()
+          ? current.material
+          : extraction.material ?? current.material,
+
+        budget: current.budget.trim()
+          ? current.budget
+          : extraction.budget == null
+            ? current.budget
+            : String(extraction.budget),
+      }));
+    } catch {
+      setError("Could not extract lead data. You can fill the form manually.");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function handleSave(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+
+    const quantity = Number(form.quantity);
+    const budget = form.budget.trim() === "" ? null : Number(form.budget);
+
+    if (!form.product.trim()) {
+      setError("Product is required.");
+      return;
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setError("Quantity must be a positive whole number.");
+      return;
+    }
+
+    if (
+      budget !== null &&
+      (!Number.isFinite(budget) || budget < 0)
+    ) {
+      setError("Budget must be a non-negative number.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      await api.createLead({
+        sourceMessageId: messageId,
+        product: form.product.trim(),
+        quantity,
+        material: form.material.trim() || null,
+        budget,
+      });
+
+      window.location.href = "/pipeline";
+    } catch {
+      setError("Could not save the lead.");
+      setSaving(false);
+    }
+  }
+
+  if (state === "loading") {
+    return (
+      <main className="page-container">
+        <StateMessage>Loading message...</StateMessage>
+      </main>
+    );
+  }
+
+  if (state === "error" || !message) {
+    return (
+      <main className="page-container">
+        <StateMessage>Message not found.</StateMessage>
+      </main>
+    );
+  }
+
+  return (
+    <main className="page-container detail-layout">
+      <a className="back-link" href="/inbox">
+        Back to inbox
+      </a>
+
+      <section className="detail-grid">
+        <article className="panel message-detail">
+          <p className="eyebrow">Inbound message</p>
+          <h1>{message.subject}</h1>
+
+          <dl className="message-facts">
+            <div>
+              <dt>Sender</dt>
+              <dd>{message.senderName} · {message.senderEmail}</dd>
+            </div>
+            <div>
+              <dt>Company</dt>
+              <dd>{message.company}</dd>
+            </div>
+          </dl>
+
+          <div className="message-body">{message.body}</div>
+        </article>
+
+        <aside className="panel extraction-panel">
+          <p className="eyebrow">Lead extraction</p>
+
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+
+          <button
+            className="primary-button"
+            type="button"
+            onClick={handleExtract}
+            disabled={extracting || saving}
+          >
+            {extracting ? "Extracting..." : "Extract with AI"}
+          </button>
+
+          <form className="lead-form" onSubmit={handleSave}>
+            <div className="form-field">
+              <label htmlFor="product">Product</label>
+              <input
+                id="product"
+                name="product"
+                value={form.product}
+                onChange={(event) => updateField("product", event.target.value)}
+                disabled={saving}
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="quantity">Quantity</label>
+              <input
+                id="quantity"
+                name="quantity"
+                type="number"
+                min="1"
+                step="1"
+                value={form.quantity}
+                onChange={(event) => updateField("quantity", event.target.value)}
+                disabled={saving}
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="material">Material</label>
+              <input
+                id="material"
+                name="material"
+                value={form.material}
+                onChange={(event) => updateField("material", event.target.value)}
+                disabled={saving}
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="budget">Budget</label>
+              <input
+                id="budget"
+                name="budget"
+                type="number"
+                min="0"
+                step="any"
+                value={form.budget}
+                onChange={(event) => updateField("budget", event.target.value)}
+                disabled={saving}
+              />
+            </div>
+
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={saving || extracting}
+            >
+              {saving ? "Saving..." : "Save lead"}
+            </button>
+          </form>
         </aside>
       </section>
     </main>

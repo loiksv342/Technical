@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractForMessage, extractRequestSchema } from "./ai.js";
 import { prisma } from "./db.js";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 const app = express();
 const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "client");
@@ -22,6 +24,18 @@ app.use((error: unknown, request: Request, response: Response, next: NextFunctio
   }
   next(error);
 });
+
+const createLeadSchema = z.object({
+  sourceMessageId: z.string().trim().min(1),
+  product: z.string().trim().min(1),
+  quantity: z.number().int().positive(),
+  material: z.string().nullable().optional(),
+  budget: z.number().finite().nonnegative().nullable().optional(),
+}).strict();
+
+const contactLeadSchema = z.object({
+  status: z.literal("CONTACTED"),
+}).strict();
 
 function serializeMessage(message: { id: string; senderName: string; senderEmail: string; company: string; subject: string; body: string; createdAt: Date }) {
   return {
@@ -61,6 +75,48 @@ app.get("/api/messages/:messageId", async (request, response, next) => {
   }
 });
 
+app.post("/api/leads", async (request, response, next) => {
+  try {
+    const parsed = createLeadSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      response.status(400).json({
+        error: "invalid_lead",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const sourceMessage = await prisma.message.findUnique({
+      where: { id: parsed.data.sourceMessageId },
+    });
+
+    if (!sourceMessage) {
+      response.status(404).json({ error: "source_message_not_found" });
+      return;
+    }
+
+    const lead = await prisma.lead.create({
+      data: {
+        id: randomUUID(),
+        sourceMessageId: parsed.data.sourceMessageId,
+        product: parsed.data.product,
+        quantity: parsed.data.quantity,
+        material: parsed.data.material ?? null,
+        budget: parsed.data.budget ?? null,
+        status: "NEW",
+      },
+    });
+
+    response.status(201).json({
+      ...lead,
+      createdAt: lead.createdAt.toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/leads", async (_request, response, next) => {
   try {
     const leads = await prisma.lead.findMany({ orderBy: { createdAt: "asc" } });
@@ -69,6 +125,7 @@ app.get("/api/leads", async (_request, response, next) => {
     next(error);
   }
 });
+
 
 app.post("/api/ai/extract", async (request, response, next) => {
   try {
@@ -100,6 +157,46 @@ app.post("/api/ai/extract", async (request, response, next) => {
   }
 });
 
+app.patch("/api/leads/:leadId/status", async (request, response, next) => {
+  try {
+    const parsed = contactLeadSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      response.status(400).json({
+        error: "invalid_status",
+        details: parsed.error.flatten(),
+      });
+      return;
+    }
+
+    const lead = await prisma.lead.findUnique({
+      where: { id: request.params.leadId },
+    });
+
+    if (!lead) {
+      response.status(404).json({ error: "lead_not_found" });
+      return;
+    }
+
+    if (lead.status !== "NEW") {
+      response.status(409).json({ error: "lead_already_contacted" });
+      return;
+    }
+
+    const updatedLead = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { status: "CONTACTED" },
+    });
+
+    response.json({
+      ...updatedLead,
+      createdAt: updatedLead.createdAt.toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use(express.static(clientDir));
 
 app.use((request, response, next) => {
@@ -114,5 +211,4 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
   console.error(error);
   response.status(500).json({ error: "internal_server_error" });
 });
-
 export { app };

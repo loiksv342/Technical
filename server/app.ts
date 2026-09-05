@@ -157,20 +157,6 @@ app.post("/api/ai/extract", async (request, response, next) => {
   }
 });
 
-app.use(express.static(clientDir));
-
-app.use((request, response, next) => {
-  if (request.method !== "GET" || request.path.startsWith("/api/")) {
-    response.status(404).json({ error: "not_found" });
-    return;
-  }
-  response.sendFile(path.join(clientDir, "index.html"), (error) => (error ? next(error) : undefined));
-});
-
-app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
-  console.error(error);
-  response.status(500).json({ error: "internal_server_error" });
-});
 app.patch("/api/leads/:leadId/status", async (request, response, next) => {
   try {
     const parsed = contactLeadSchema.safeParse(request.body);
@@ -211,4 +197,18 @@ app.patch("/api/leads/:leadId/status", async (request, response, next) => {
   }
 });
 
+app.use(express.static(clientDir));
+
+app.use((request, response, next) => {
+  if (request.method !== "GET" || request.path.startsWith("/api/")) {
+    response.status(404).json({ error: "not_found" });
+    return;
+  }
+  response.sendFile(path.join(clientDir, "index.html"), (error) => (error ? next(error) : undefined));
+});
+
+app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+  console.error(error);
+  response.status(500).json({ error: "internal_server_error" });
+});
 export { app };

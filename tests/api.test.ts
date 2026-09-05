@@ -37,6 +37,64 @@ describe("InboxIQ API", () => {
     expect(await prisma.lead.count()).toBe(0);
   });
 
+  it("creates a lead with backend-owned NEW status", async () => {
+    const response = await request(app)
+      .post("/api/leads")
+      .send({
+        sourceMessageId: "message-perfect",
+        product: "Desk",
+        quantity: 4,
+        material: "Oak",
+        budget: 1000,
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual(expect.objectContaining({
+      sourceMessageId: "message-perfect",
+      product: "Desk",
+      quantity: 4,
+      material: "Oak",
+      budget: 1000,
+      status: "NEW",
+    }));
+  });
+
+  it("rejects invalid lead data without creating a record", async () => {
+    const response = await request(app)
+      .post("/api/leads")
+      .send({
+        sourceMessageId: "message-perfect",
+        product: " ",
+        quantity: 0,
+        budget: -10,
+      });
+
+    expect(response.status).toBe(400);
+    expect(await prisma.lead.count()).toBe(1);
+  });
+
+  it("allows only NEW to CONTACTED status transition", async () => {
+    const created = await request(app)
+      .post("/api/leads")
+      .send({
+        sourceMessageId: "message-perfect",
+        product: "Chair",
+        quantity: 2,
+      });
+
+    const contacted = await request(app)
+      .patch(`/api/leads/${created.body.id}/status`)
+      .send({ status: "CONTACTED" });
+
+    const repeated = await request(app)
+      .patch(`/api/leads/${created.body.id}/status`)
+      .send({ status: "CONTACTED" });
+
+    expect(contacted.status).toBe(200);
+    expect(contacted.body.status).toBe("CONTACTED");
+    expect(repeated.status).toBe(409);
+  });
+
   it("returns a stable error for malformed API JSON", async () => {
     const response = await request(app)
       .post("/api/ai/extract")
@@ -67,6 +125,20 @@ describe("InboxIQ API", () => {
     expect(empty.status).toBe(200);
     expect(empty.body).toEqual({});
   });
+  it("creates a new lead with backend-owned NEW status", async () => {
+  const response = await request(app)
+    .post("/api/leads")
+    .send({
+      sourceMessageId: "message-perfect",
+      product: "Desk",
+      quantity: 4,
+      material: "Oak",
+      budget: 1000,
+      status: "CONTACTED",
+    });
+
+  expect(response.status).toBe(400);
+});
 });
 
 afterAll(async () => {

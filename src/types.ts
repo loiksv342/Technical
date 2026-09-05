@@ -20,14 +20,6 @@ export type Message = {
 };
 
 
-export type CreateLeadRequest = {
-  sourceMessageId: string;
-  product: string;
-  quantity: number;
-  material?: string | null;
-  budget?: number | null;
-};  
-
 export type Extraction = {
   product?: string;
   quantity?: number | null;
@@ -42,3 +34,4 @@ export type CreateLeadInput = {
   material?: string | null;
   budget?: number | null;
 };
+
